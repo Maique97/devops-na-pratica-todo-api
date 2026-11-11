@@ -1,0 +1,11 @@
+#!/bin/bash
+# Script de inicialização da instância: instala Docker e sobe a API.
+set -euxo pipefail
+
+dnf update -y
+dnf install -y docker
+systemctl enable --now docker
+
+docker pull ${container_image}
+docker run -d --name todo-api --restart unless-stopped \
+  -p 80:5000 ${container_image}

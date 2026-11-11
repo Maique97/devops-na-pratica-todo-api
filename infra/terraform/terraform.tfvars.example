@@ -1,0 +1,6 @@
+aws_region      = "us-east-1"
+project_name    = "todo-api"
+environment     = "dev"
+instance_type   = "t3.micro"
+container_image = "ghcr.io/maique97/devops-na-pratica-todo-api:latest"
+# ssh_allowed_cidr = "203.0.113.10/32"
