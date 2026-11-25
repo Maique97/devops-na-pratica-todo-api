@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   test:
-    name: Lint e testes (Python)
+    name: Lint, segurança e testes (Python)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout do código
@@ -34,6 +34,12 @@ jobs:
 
       - name: Lint (flake8)
         run: flake8 .
+
+      - name: Análise estática de segurança (Bandit)
+        run: bandit -r app -ll
+
+      - name: Auditoria de dependências (pip-audit)
+        run: pip-audit -r requirements.txt
 
       - name: Testes automatizados (pytest + cobertura >= 80%)
         run: pytest
@@ -68,10 +74,25 @@ jobs:
       - name: Validar sintaxe e referências
         run: terraform validate
 
-  docker:
-    name: Build, smoke test e publicação da imagem
+  manifests:
+    name: Validação de scripts, Compose e Kubernetes
     runs-on: ubuntu-latest
-    needs: [test, terraform]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck nos scripts de deploy
+        run: shellcheck scripts/*.sh
+
+      - name: Validar docker-compose.yml
+        run: docker compose config -q
+
+      - name: Renderizar manifests Kubernetes (kustomize)
+        run: kubectl kustomize k8s/ > /tmp/rendered.yaml && cat /tmp/rendered.yaml
+
+  docker:
+    name: Build, scan e publicação da imagem
+    runs-on: ubuntu-latest
+    needs: [test, terraform, manifests]
     permissions:
       contents: read
       packages: write
@@ -82,17 +103,30 @@ jobs:
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Build da imagem Docker
-        run: docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+        run: |
+          docker build \
+            --build-arg APP_VERSION="2.0.${{ github.run_number }}" \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+
+      - name: Scan de vulnerabilidades da imagem (Trivy)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.2 image \
+            --db-repository mirror.gcr.io/aquasec/trivy-db \
+            --severity HIGH,CRITICAL --ignore-unfixed --no-progress \
+            --exit-code 0 --format table "$IMAGE:${{ github.sha }}"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.2 image \
+            --db-repository mirror.gcr.io/aquasec/trivy-db \
+            --severity CRITICAL --ignore-unfixed --no-progress \
+            --exit-code 1 --quiet "$IMAGE:${{ github.sha }}"
 
       - name: Smoke test do container
         run: |
-          docker run -d --name api -p 5000:5000 "$IMAGE:${{ github.sha }}"
-          for i in $(seq 1 15); do
-            curl -fsS http://localhost:5000/health && exit 0
-            sleep 2
-          done
-          docker logs api
-          exit 1
+          docker run -d --name api -p 8080:5000 "$IMAGE:${{ github.sha }}"
+          bash scripts/smoke-test.sh http://localhost:8080
+          docker logs api | tail -5
 
       - name: Login no GitHub Container Registry
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
