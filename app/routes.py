@@ -14,7 +14,16 @@ def _error(message: str, status: int):
 
 @bp.get("/health")
 def health():
-    return jsonify(status="ok", version=current_app.config["APP_VERSION"])
+    """Liveness: o processo está de pé."""
+    return jsonify(status="ok", version=current_app.config["APP_VERSION"],
+                   environment=current_app.config["APP_ENV"])
+
+
+@bp.get("/ready")
+def ready():
+    """Readiness: a aplicação consegue atender (armazenamento acessível)."""
+    _store().list()
+    return jsonify(status="ready")
 
 
 @bp.get("/tasks")
