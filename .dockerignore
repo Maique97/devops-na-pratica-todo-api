@@ -1,8 +1,15 @@
 .git
 .github
 infra
+k8s
+scripts
+monitoring
 tests
+docs
 __pycache__
 *.pyc
 .venv
+.coverage
 coverage.xml
+.pytest_cache
+docker-compose.yml

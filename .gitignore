@@ -12,3 +12,4 @@ coverage.xml
 !terraform.tfvars.example
 .terraform.lock.hcl
 crash.log
+.deployed_image
